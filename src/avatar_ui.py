@@ -78,6 +78,7 @@ from ouc_firewall import install_killswitch, is_killswitch_installed, remove_kil
 WINDOW_TITLE = "Opencode Unlimited v4.0 - Made by Avatar"
 DETACHED_PROCESS = 0x00000008
 _WORKER_FILES = (
+    "api_gateway.py",
     "ouc_common.py",
     "ouc_firewall.py",
     "zen_proxy.py",
@@ -481,6 +482,51 @@ def _user_path_has_bin() -> bool:
 
 class AvatarControlApi:
     """Backend controller exposed to the Avatar WebView2 UI."""
+
+    def get_api_gateway(self) -> dict:
+        try:
+            from api_gateway import get_gateway_state
+            return get_gateway_state()
+        except Exception:
+            return {"running": False, "error": "Could not read local API configuration."}
+
+    def save_api_gateway(self, upstream_url: str, upstream_key: str | None, port: int, via_warp: bool) -> dict:
+        try:
+            from api_gateway import configure_gateway
+            configure_gateway(upstream_url=upstream_url, upstream_key=upstream_key, port=port, via_warp=via_warp)
+            return {"ok": True, "message": "Local API settings saved.", "state": self.get_api_gateway()}
+        except Exception:
+            return {"ok": False, "message": "Could not save settings. Check the upstream URL and local port; stop the gateway before changing its port."}
+
+    def start_api_gateway(self) -> dict:
+        try:
+            from api_gateway import start_gateway
+            state = start_gateway()
+            return {"ok": True, "message": "Local API started.", "state": state}
+        except Exception:
+            return {"ok": False, "message": "Could not start the local API. Check its configuration and whether the port is already in use."}
+
+    def stop_api_gateway(self) -> dict:
+        try:
+            from api_gateway import stop_gateway
+            state = stop_gateway()
+            return {"ok": True, "message": "Local API stopped.", "state": state}
+        except Exception:
+            return {"ok": False, "message": "Could not stop the local API."}
+
+    def reveal_api_gateway_key(self) -> dict:
+        try:
+            from api_gateway import get_gateway_key
+            return {"ok": True, "key": get_gateway_key()}
+        except Exception:
+            return {"ok": False, "message": "Could not read the local API key."}
+
+    def rotate_api_gateway_key(self) -> dict:
+        try:
+            from api_gateway import rotate_gateway_key
+            return {"ok": True, "key": rotate_gateway_key()}
+        except Exception:
+            return {"ok": False, "message": "Could not rotate the local API key."}
 
     def __init__(self) -> None:
         ensure_dirs()

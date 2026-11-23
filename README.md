@@ -36,6 +36,57 @@ tunnel. Allow OpenCode's retry to finish, wait, or choose another available
 model/provider. This fork cannot add capacity to a remote inference service and
 does not claim to remove that error.
 
+## Local API Gateway
+
+The dashboard's Local API controls expose an OpenAI-compatible gateway for
+9Router or another router on this computer. This is an inference API, separate
+from the HTTP CONNECT proxy on port `41987`.
+
+1. Open the dashboard from the updated source.
+2. Set an upstream OpenAI-compatible base URL ending in `/v1` and its API key.
+3. Save the settings and start the Local API. The default local base URL is
+   `http://127.0.0.1:41988/v1`.
+4. Reveal/copy the local gateway key deliberately, then enter that key and base
+   URL as a custom OpenAI-compatible provider in your router.
+
+The local key protects this gateway; it is not the upstream provider key. A
+missing upstream key can only work when the selected provider permits anonymous
+access. No OpenCode credentials are extracted or created for you. Choose the
+same model ID that your upstream supports. The gateway does not translate model
+names, turn chat requests into Responses requests, or add provider capacity.
+
+Supported routes are `GET /v1/models`, `POST /v1/chat/completions`, and
+`POST /v1/responses`, with streaming passed through when supported by the
+upstream. The model-list route assumes the standard `base URL + /models`
+convention. OpenCode's documented discovery URL differs from its OpenAI
+inference URL, so a successful `/models` response is not guaranteed for that
+provider and does not prove inference entitlement. Current OpenCode docs limit
+free-tier inference to OpenCode itself; router requests may receive `403`.
+
+The gateway binds to loopback only, not the LAN. A router in Docker, WSL, or
+another computer needs an explicitly designed network path; `127.0.0.1` inside
+that environment is not this Windows process. No firewall or VPN changes are
+made by the gateway. The default WARP route uses the existing local CONNECT
+proxy and does not fall back to a direct route if it is unavailable. Direct
+upstream access is a separate explicit setting.
+
+When started from the dashboard, the gateway runs in that dashboard process;
+keep it open while the router is using the endpoint. For a separate foreground
+process with the same saved configuration, run `python src/api_gateway.py` and
+stop it with Ctrl+C. Do not run both on the same port.
+
+Point the gateway at a real inference provider, not at the same router that
+uses this gateway as its upstream, to avoid a routing cycle. Use HTTPS for
+non-local providers because their API key is sent to the configured upstream.
+
+Usage records contain request metadata and provider-reported token usage, not
+prompts, completion text, or API keys. Missing provider usage is unknown rather
+than an estimated token count. Configuration and bounded usage logs are stored
+outside this repository under the user's `opencode-unlimited/lane` directory.
+The dashboard's counters and recent list cover the current gateway process;
+the rotated metadata files retain earlier sessions separately.
+Do not share that private configuration directory or paste keys into issues.
+
 ---
 
 [![Version](https://img.shields.io/badge/Version-v4.0-22c55e?style=for-the-badge&logo=semver)](https://github.com/ShadowySphinX/Opencode-Unlimited-Limit-Bypass-)

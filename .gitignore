@@ -24,3 +24,7 @@ Desktop.ini
 
 # Deprecated single-purpose binary
 OpencodeUnlimited-Avatar.exe
+
+# Local API credentials and usage metadata
+api_gateway.json
+api_usage.jsonl*

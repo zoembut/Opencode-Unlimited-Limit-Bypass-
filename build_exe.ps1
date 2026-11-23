@@ -96,6 +96,7 @@ $ArgsList = @(
     "--hidden-import", "bottle",
     "--hidden-import", "psutil",
     "--hidden-import", "ouc_common",
+    "--hidden-import", "api_gateway",
     "--hidden-import", "ouc_firewall",
     "--hidden-import", "zen_proxy",
     "--hidden-import", "zen_lane",

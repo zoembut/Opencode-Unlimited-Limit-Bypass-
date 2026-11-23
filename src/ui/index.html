@@ -992,6 +992,58 @@
   .modal p { margin-top: 7px; font-size: 12px; line-height: 1.55; color: var(--text-2); }
   .modal-actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 16px; }
 
+  /* Local API shares the dashboard's panel, input, and button tokens. */
+  .api-dialog {
+    width: min(860px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    margin: auto;
+    padding: 0;
+    overflow: auto;
+    background: var(--surface);
+    color: var(--text);
+    border: 1px solid var(--line-2);
+    border-radius: var(--r);
+    font: inherit;
+  }
+  .api-dialog::backdrop { background: rgba(3, 4, 6, 0.76); }
+  .api-dialog .panel-head { flex-wrap: wrap; }
+  .api-dialog .panel-title { color: var(--text-2); }
+  .api-dialog .btn { min-height: 44px; height: auto; white-space: normal; }
+  .api-dialog :focus-visible { outline: 2px solid var(--info); outline-offset: 2px; }
+  .api-dialog .hint { color: var(--text-2); line-height: 1.55; }
+  .api-body { padding: 12px; display: grid; gap: 14px; }
+  .api-grid { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 16px; }
+  .api-field { display: grid; gap: 5px; margin-bottom: 10px; min-width: 0; }
+  .api-field > label, .api-heading { font-size: 12px; font-weight: 600; color: var(--text); }
+  .api-dialog .input-sm { width: 100%; height: 36px; user-select: text; }
+  .api-dialog .input-sm::placeholder { color: var(--text-2); }
+  .api-check { display: flex; align-items: center; gap: 8px; min-height: 44px; color: var(--text-2); cursor: pointer; }
+  .api-check input { width: 17px; height: 17px; flex: 0 0 auto; accent-color: var(--ok); }
+  .api-form-fields { border: 0; min-width: 0; }
+  .api-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+  .api-heading { margin-bottom: 8px; }
+  .api-message { color: var(--text-2); overflow-wrap: anywhere; }
+  .api-message.error { color: #f7a3a9; }
+  .api-stats { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 10px 0; color: var(--text-2); }
+  .api-stats dd { display: inline; font-family: var(--mono); color: var(--text); }
+  .api-stats dt { display: inline; margin-right: 6px; }
+  .api-table { width: 100%; border-collapse: collapse; table-layout: fixed; user-select: text; }
+  .api-table th, .api-table td { text-align: left; padding: 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; vertical-align: top; }
+  .api-table th { color: var(--text-2); font-weight: 500; }
+  .api-table th:first-child { width: 25%; }
+  .api-table th:nth-child(2) { width: 30%; }
+  @media (max-width: 550px) {
+    .topbar { flex-wrap: wrap; height: auto; padding: 8px 12px; gap: 8px; }
+    .topbar-right { width: 100%; margin-left: 0; }
+    .topbar-right .status-pill { flex: 1; min-width: 0; }
+    .api-grid { grid-template-columns: minmax(0, 1fr); }
+    .api-dialog .input-sm { height: 44px; }
+    .api-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .api-table tr { display: block; padding: 6px 0; border-bottom: 1px solid var(--line); }
+    .api-table td { display: grid; grid-template-columns: 82px minmax(0, 1fr); border: 0; padding: 4px 0; }
+    .api-table td::before { content: attr(data-label); color: var(--text-2); }
+  }
+
   /* ============================================================
      Responsive
      ============================================================ */
@@ -1045,6 +1097,7 @@
     </div>
 
     <div class="topbar-right">
+      <button id="btnLocalApi" class="btn" type="button" aria-haspopup="dialog" aria-controls="apiGatewayDialog">Local API</button>
       <div id="overallPill" class="status-pill"
            data-tip-title="Protection and tunnel status"
            data-tip-body="Live overall state. Green means WARP is connected and the egress route is verified. Standard mode falls back to the local route if WARP drops; strict mode refuses requests instead.">
@@ -1487,6 +1540,84 @@
   </div>
 
   <div id="toast" class="toast"></div>
+
+  <dialog id="apiGatewayDialog" class="api-dialog" aria-labelledby="apiGatewayTitle" aria-describedby="apiGatewayIntro">
+    <div class="panel-head">
+      <h2 id="apiGatewayTitle" class="panel-title">Local API</h2>
+      <span id="apiGatewayStatus" class="tag">Loading...</span>
+      <button id="btnRefreshApi" class="btn" type="button">Refresh status</button>
+      <button id="btnCloseApi" class="btn" type="button" style="margin-left:auto;">Close</button>
+    </div>
+    <div class="api-body">
+      <p id="apiGatewayIntro" class="hint">OpenAI-compatible /v1 endpoint for 9router and other routers. No model or account is bundled: supply a compatible upstream and its API key. WARP does not manufacture inference capacity or remove provider limits. The local listener binds to 127.0.0.1, so clients must run on this same computer.</p>
+      <p id="apiGatewayMessage" class="api-message" role="status" aria-live="polite">Loading Local API state. If this persists, reopen the dashboard with the gateway backend installed.</p>
+      <div class="api-grid">
+        <form id="apiGatewayForm" autocomplete="off">
+          <fieldset id="apiGatewayFields" class="api-form-fields" disabled>
+            <legend class="api-heading">Upstream configuration</legend>
+            <div class="api-field">
+              <label for="apiUpstreamUrl">Upstream base URL</label>
+              <input id="apiUpstreamUrl" class="input-sm" type="url" placeholder="https://provider.example/v1" required spellcheck="false" aria-describedby="apiUrlHelp" />
+              <span id="apiUrlHelp" class="hint">Use an HTTP(S) base URL, without embedded credentials or query parameters.</span>
+            </div>
+            <div class="api-field">
+              <label for="apiUpstreamKey">Upstream API key</label>
+              <input id="apiUpstreamKey" class="input-sm" type="password" autocomplete="new-password" spellcheck="false" aria-describedby="apiUpstreamKeyHelp" />
+              <span id="apiUpstreamKeyHelp" class="hint">Leave blank to keep the saved upstream key.</span>
+            </div>
+            <label class="api-check"><input id="apiClearUpstreamKey" type="checkbox" />Clear the saved upstream key on save</label>
+            <div class="api-field">
+              <label for="apiPort">Local port</label>
+              <input id="apiPort" class="input-sm" type="number" value="41988" min="1" max="65535" step="1" required />
+            </div>
+            <label class="api-check"><input id="apiViaWarp" type="checkbox" checked />Route upstream requests via WARP</label>
+            <div class="api-actions">
+              <button id="btnSaveApi" class="btn btn-primary" type="submit">Save configuration</button>
+              <button id="btnReloadApi" class="btn" type="button">Reload saved settings</button>
+            </div>
+          </fieldset>
+        </form>
+        <section aria-labelledby="apiClientHeading">
+          <h3 id="apiClientHeading" class="api-heading">Router connection</h3>
+          <div class="api-field">
+            <label for="apiBaseUrl">Local base URL</label>
+            <input id="apiBaseUrl" class="input-sm" type="text" readonly placeholder="Waiting for gateway state..." />
+            <button id="btnCopyApiUrl" class="btn" type="button" disabled>Copy base URL</button>
+          </div>
+          <div class="api-field">
+            <label for="apiLocalKey">Local API key</label>
+            <input id="apiLocalKey" class="input-sm" type="password" value="********" readonly autocomplete="off" aria-describedby="apiLocalKeyHelp" />
+            <span id="apiLocalKeyHelp" class="hint">Hidden until Reveal or Rotate. Use this local key in your router, not the upstream key. Copying puts it on the system clipboard.</span>
+          </div>
+          <div class="api-actions">
+            <button id="btnRevealApiKey" class="btn" type="button" disabled>Reveal key</button>
+            <button id="btnHideApiKey" class="btn" type="button" disabled>Hide key</button>
+            <button id="btnCopyApiKey" class="btn" type="button" disabled>Copy key</button>
+            <button id="btnRotateApiKey" class="btn btn-danger" type="button" disabled>Rotate key</button>
+          </div>
+          <p class="hint" style="margin:10px 0;">Save settings before starting. Unsaved edits are not applied by Start. Stop before changing a running listener's port. Keep this dashboard open while the router uses the API.</p>
+          <div class="api-actions">
+            <button id="btnStartApi" class="btn btn-primary" type="button" disabled>Start API</button>
+            <button id="btnStopApi" class="btn" type="button" disabled>Stop API</button>
+          </div>
+        </section>
+      </div>
+      <section aria-labelledby="apiUsageHeading">
+        <h3 id="apiUsageHeading" class="api-heading">Usage log</h3>
+        <dl class="api-stats">
+          <div><dt>Requests</dt><dd id="apiRequests">Not reported</dd></div>
+          <div><dt>Errors</dt><dd id="apiErrors">Not reported</dd></div>
+          <div><dt>Tokens</dt><dd id="apiTokens">Not reported</dd></div>
+        </dl>
+        <p id="apiRecentMessage" class="hint">Loading recent requests...</p>
+        <table id="apiRecentTable" class="api-table" hidden>
+          <caption class="hint">Current-session requests, refreshed every 5 seconds. Token counts appear only when reported by the upstream. Bounded metadata logs are also saved locally.</caption>
+          <thead><tr><th scope="col">Timestamp</th><th scope="col">Model</th><th scope="col">Status</th><th scope="col">Duration</th><th scope="col">Tokens</th></tr></thead>
+          <tbody id="apiRecentRows"></tbody>
+        </table>
+      </section>
+    </div>
+  </dialog>
 
   <div id="modalBg" class="modal-backdrop">
     <div class="modal">
@@ -1948,6 +2079,253 @@
     };
     $("modalCancel").onclick = () => $("modalBg").classList.remove("show");
   }
+
+  // Keep gateway state and revealed keys out of the dashboard diagnostic state.
+  (() => {
+    const dialog = $("apiGatewayDialog");
+    let gateway = null;
+    let initialized = false;
+    let busy = false;
+    let pending = 0;
+    let requestVersion = 0;
+    let localKey = "";
+    let pollStarted = false;
+    let dialogVersion = 0;
+
+    function message(text, error = false) {
+      $("apiGatewayMessage").textContent = text;
+      $("apiGatewayMessage").className = "api-message" + (error ? " error" : "");
+    }
+
+    function updateControls() {
+      $("apiGatewayFields").disabled = busy || !initialized;
+      $("btnRefreshApi").disabled = busy || pending > 0;
+      $("btnReloadApi").disabled = busy || pending > 0;
+      $("btnStartApi").disabled = busy || !gateway || gateway.running || !gateway.upstream_url;
+      $("btnStopApi").disabled = busy || !gateway || !gateway.running;
+      $("btnCopyApiUrl").disabled = busy || !gateway || !gateway.base_url;
+      $("btnRevealApiKey").disabled = busy || !gateway || !gateway.api_key_set;
+      $("btnRotateApiKey").disabled = busy || !gateway;
+      $("btnCopyApiKey").disabled = busy || !localKey;
+      $("btnHideApiKey").disabled = !localKey;
+      $("apiUpstreamKey").disabled = $("apiClearUpstreamKey").checked;
+    }
+
+    function hideKey() {
+      dialogVersion++;
+      localKey = "";
+      $("apiLocalKey").type = "password";
+      $("apiLocalKey").value = "********";
+      updateControls();
+    }
+
+    function loadForm(s) {
+      $("apiUpstreamUrl").value = s.upstream_url || "";
+      $("apiUpstreamKey").value = "";
+      $("apiClearUpstreamKey").checked = false;
+      $("apiPort").value = s.port == null ? 41988 : s.port;
+      $("apiViaWarp").checked = s.via_warp !== false;
+      initialized = true;
+    }
+
+    function count(value, missing = "Not reported") {
+      return typeof value === "number" && Number.isFinite(value) && value >= 0
+        ? value.toLocaleString() : missing;
+    }
+
+    function renderGateway(s, reloadForm = false) {
+      gateway = s;
+      if (!initialized || reloadForm) loadForm(s);
+      setTag($("apiGatewayStatus"), s.running ? "Running" : "Stopped", s.running ? "ok" : "");
+      $("apiBaseUrl").value = s.base_url || "";
+      $("apiUpstreamKeyHelp").textContent = s.has_upstream_key
+        ? "A key is saved. Leave blank to keep it, or enter a replacement."
+        : "No upstream key saved. Enter the compatible provider's API key.";
+      if (!s.api_key_set) hideKey();
+      const stats = s.stats || {};
+      $("apiRequests").textContent = count(stats.requests);
+      $("apiErrors").textContent = count(stats.errors);
+      const unknownUsage = typeof stats.unknown_usage === "number" && stats.unknown_usage > 0 ? stats.unknown_usage : 0;
+      const noKnownUsage = unknownUsage && stats.requests === unknownUsage && !stats.total_tokens;
+      $("apiTokens").textContent = (noKnownUsage ? "Not reported" : count(stats.total_tokens))
+        + (unknownUsage ? ` (${unknownUsage.toLocaleString()} request${unknownUsage === 1 ? "" : "s"} without usage)` : "");
+      const recent = Array.isArray(s.recent) ? s.recent : [];
+      const rows = $("apiRecentRows");
+      rows.replaceChildren();
+      recent.forEach((entry) => {
+        const row = document.createElement("tr");
+        const rawTime = entry.timestamp;
+        const date = new Date(typeof rawTime === "number" ? rawTime * 1000 : rawTime);
+        const timestamp = rawTime != null && Number.isFinite(date.getTime()) ? date.toLocaleString() : "Not reported";
+        const duration = typeof entry.duration_ms === "number" && Number.isFinite(entry.duration_ms) && entry.duration_ms >= 0
+          ? `${entry.duration_ms.toLocaleString()} ms` : "Not reported";
+        const requestStatus = entry.status == null ? "Not reported" : entry.status;
+        const values = [timestamp, entry.model || "Not reported", entry.completed === false ? `${requestStatus} (incomplete)` : requestStatus, duration, count(entry.usage && entry.usage.total_tokens)];
+        ["Timestamp", "Model", "Status", "Duration", "Tokens"].forEach((label, index) => {
+          const cell = document.createElement("td");
+          cell.dataset.label = label;
+          cell.textContent = String(values[index]);
+          row.appendChild(cell);
+        });
+        rows.appendChild(row);
+      });
+      $("apiRecentTable").hidden = !recent.length;
+      $("apiRecentMessage").hidden = !!recent.length;
+      $("apiRecentMessage").textContent = "No requests yet. Start the API and point your router at the local base URL using the local API key.";
+      updateControls();
+    }
+
+    async function refreshGateway(reloadForm = false, duringAction = false) {
+      if ((busy || pending > 0) && !duringAction) return false;
+      const version = ++requestVersion;
+      pending++;
+      updateControls();
+      try {
+        const api = window.pywebview && window.pywebview.api;
+        if (!api || typeof api.get_api_gateway !== "function") throw new Error("unavailable");
+        const s = await api.get_api_gateway();
+        if (version !== requestVersion) return false;
+        if (!s || s.error || typeof s.running !== "boolean") throw new Error("invalid state");
+        renderGateway(s, reloadForm);
+        if (!busy) message(s.running
+          ? "Local API is running. Usage refreshes every 5 seconds; unsaved settings stay unchanged."
+          : "Local API is stopped. Save a compatible upstream, then start the API.");
+        return true;
+      } catch (_) {
+        if (version !== requestVersion) return false;
+        setTag($("apiGatewayStatus"), "Unavailable", "bad");
+        gateway = null;
+        message("Cannot read Local API state. Check that this dashboard includes the gateway backend, then use Refresh status to retry. Existing form edits are kept.", true);
+        $("apiRecentTable").hidden = true;
+        $("apiRecentMessage").hidden = false;
+        $("apiRecentMessage").textContent = "Usage is unavailable until gateway state can be read.";
+        ["apiRequests", "apiErrors", "apiTokens"].forEach((id) => { $(id).textContent = "Unavailable"; });
+        return false;
+      } finally {
+        pending--;
+        updateControls();
+      }
+    }
+
+    // Unlike runAction, gateway actions never refresh or serialize get_state.
+    async function gatewayAction(buttonId, method, args, success, afterSuccess) {
+      if (busy) return;
+      busy = true;
+      requestVersion++;
+      const button = $(buttonId);
+      const original = button.textContent;
+      button.textContent = "Working...";
+      updateControls();
+      message("Applying Local API action...");
+      try {
+        const api = window.pywebview && window.pywebview.api;
+        if (!api || typeof api[method] !== "function") throw new Error("unavailable");
+        const result = await api[method](...args);
+        if (!result || result.ok !== true) throw new Error("action failed");
+        if (afterSuccess) afterSuccess(result);
+        if (result.state && !result.state.error && typeof result.state.running === "boolean") renderGateway(result.state);
+        else if (!await refreshGateway(false, true)) return;
+        message(success);
+      } catch (_) {
+        // Bridge exceptions can include request arguments; never echo them or secrets.
+        message("Local API action failed. Check your upstream URL, key and port, and make sure the gateway backend is available. Stop the API before changing its port, then retry.", true);
+      } finally {
+        busy = false;
+        button.textContent = original;
+        updateControls();
+      }
+    }
+
+    async function copyValue(value, success) {
+      if (!value) return;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(value);
+        else {
+          const api = window.pywebview && window.pywebview.api;
+          if (!api || typeof api.copy_text !== "function") throw new Error("unavailable");
+          const result = await api.copy_text(value);
+          if (!result || result.ok === false) throw new Error("copy failed");
+        }
+        message(success);
+      } catch (_) {
+        message("Clipboard unavailable. Select the displayed value and copy it manually.", true);
+      }
+    }
+
+    $("btnLocalApi").onclick = () => {
+      dialogVersion++;
+      dialog.showModal();
+      $("btnCloseApi").focus();
+      refreshGateway();
+    };
+    $("btnCloseApi").onclick = () => dialog.close();
+    dialog.addEventListener("close", () => {
+      dialogVersion++;
+      hideKey();
+      $("apiUpstreamKey").value = "";
+      $("btnLocalApi").focus();
+    });
+    $("btnRefreshApi").onclick = () => refreshGateway();
+    $("btnReloadApi").onclick = () => {
+      if (window.confirm("Discard unsaved Local API settings and reload the saved configuration?")) refreshGateway(true);
+    };
+    $("apiClearUpstreamKey").onchange = () => {
+      if ($("apiClearUpstreamKey").checked) $("apiUpstreamKey").value = "";
+      updateControls();
+    };
+    $("apiUpstreamUrl").oninput = () => $("apiUpstreamUrl").setCustomValidity("");
+    $("apiGatewayForm").onsubmit = (event) => {
+      event.preventDefault();
+      const input = $("apiUpstreamUrl");
+      const upstreamUrl = input.value.trim();
+      try {
+        const url = new URL(upstreamUrl);
+        if (!["https:", "http:"].includes(url.protocol) || url.username || url.password || url.search || url.hash) throw new Error("invalid URL");
+      } catch (_) {
+        input.setCustomValidity("Use an HTTP(S) upstream base URL without credentials, query parameters or a fragment.");
+        input.reportValidity();
+        return;
+      }
+      if (!$("apiGatewayForm").reportValidity()) return;
+      const key = $("apiClearUpstreamKey").checked ? "" : $("apiUpstreamKey").value || null;
+      gatewayAction("btnSaveApi", "save_api_gateway", [upstreamUrl, key, Number($("apiPort").value), $("apiViaWarp").checked],
+        "Local API configuration saved. Start uses the saved settings.", () => {
+          $("apiUpstreamKey").value = "";
+          $("apiClearUpstreamKey").checked = false;
+        });
+    };
+    $("btnStartApi").onclick = () => gatewayAction("btnStartApi", "start_api_gateway", [], "Local API started.");
+    $("btnStopApi").onclick = () => gatewayAction("btnStopApi", "stop_api_gateway", [], "Local API stopped.");
+    const displayKey = (result, version) => {
+      if (dialog.open && version === dialogVersion && typeof result.key === "string" && result.key) {
+        localKey = result.key;
+        $("apiLocalKey").type = "text";
+        $("apiLocalKey").value = localKey;
+      }
+    };
+    $("btnRevealApiKey").onclick = () => {
+      const version = dialogVersion;
+      gatewayAction("btnRevealApiKey", "reveal_api_gateway_key", [], "Local key revealed only in this panel. Hide it when finished.", (result) => displayKey(result, version));
+    };
+    $("btnRotateApiKey").onclick = () => {
+      if (!window.confirm("Rotate the local API key? Routers using the old key will stop authenticating until you update them.")) return;
+      hideKey();
+      const version = dialogVersion;
+      gatewayAction("btnRotateApiKey", "rotate_api_gateway_key", [], "Local key rotated. Update your routers with the new key.", (result) => displayKey(result, version));
+    };
+    $("btnHideApiKey").onclick = hideKey;
+    $("btnCopyApiUrl").onclick = () => copyValue(gateway && gateway.base_url, "Local base URL copied.");
+    $("btnCopyApiKey").onclick = () => copyValue(localKey, "Local API key copied to the system clipboard.");
+
+    function startGatewayPolling() {
+      if (pollStarted) return;
+      pollStarted = true;
+      refreshGateway();
+      setInterval(() => refreshGateway(), 5000);
+    }
+    window.addEventListener("pywebviewready", startGatewayPolling);
+    if (window.pywebview && window.pywebview.api) startGatewayPolling();
+  })();
 
   // Hover Explanation Engine (Floating Tooltip + Pinned Feature Inspector)
   const tipEl = $("floatTip");
