@@ -14,6 +14,21 @@ import zen_guard
 
 
 class ProviderOverloadTests(unittest.TestCase):
+    def test_exact_overload_advances_log_without_queueing_quota_rotation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "opencode.log"
+            log.write_text(
+                "sessionID=ses_overloaded AI.Error.RateLimit The inference service is overloaded\n",
+                encoding="utf-8",
+            )
+            state = {}
+            with mock.patch.object(zen_guard, "OPENCODE_LOG_FILE", log), mock.patch.object(zen_guard, "_save_state"):
+                wall, sessions = zen_guard._read_new_log_bytes(state)
+            self.assertFalse(wall)
+            self.assertEqual(sessions, [])
+            self.assertFalse(state.get("wall_pending", False))
+            self.assertEqual(state["offset"], log.stat().st_size)
+
     def test_provider_overload_does_not_trigger_automatic_hop(self):
         api = avatar_ui.AvatarControlApi.__new__(avatar_ui.AvatarControlApi)
         api._repair_lock = threading.Lock()

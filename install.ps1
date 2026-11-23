@@ -133,6 +133,38 @@ if (-not $WarpBin) {
 if (-not $WarpBin) { Die "warp-cli.exe not found - install Cloudflare WARP from https://1.1.1.1/ and re-run." }
 Ok "warp-cli found: $WarpBin"
 
+# ---------------------------------------------------------------- Egress configuration
+$EgressCfg = Join-Path $Dest "lane\egress_mode.json"
+$WarpScope = "isolated"
+$EgressMode = "warp"
+if (Test-Path -LiteralPath $EgressCfg) {
+    try {
+        $ec = Get-Content -LiteralPath $EgressCfg -Raw | ConvertFrom-Json -ErrorAction Stop
+        if ($ec -isnot [pscustomobject] -or
+            $ec.warp_scope -isnot [string] -or $ec.warp_scope -cnotin @("isolated", "tun") -or
+            $ec.mode -isnot [string] -or $ec.mode -cnotin @("warp", "tor", "custom", "clean")) {
+            throw "Expected an object with a valid warp_scope and mode."
+        }
+        $WarpScope = [string]$ec.warp_scope
+        $EgressMode = [string]$ec.mode
+    } catch {
+        Die "Invalid egress configuration at ${EgressCfg}: $_. Refusing full-system fallback."
+    }
+} else {
+    New-Item -ItemType Directory -Force -Path (Split-Path $EgressCfg) | Out-Null
+    $ec = [ordered]@{
+        mode = $EgressMode
+        warp_scope = $WarpScope
+        custom_proxy = "127.0.0.1:10808"
+        custom_type = "socks5"
+    }
+    [IO.File]::WriteAllText(
+        $EgressCfg,
+        ($ec | ConvertTo-Json),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+}
+
 # ---------------------------------------------------------------- Stop existing workers
 Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
     $_.ProcessId -ne $PID -and
@@ -179,7 +211,7 @@ try {
 Ok "User PATH updated (prepended $BinDest)"
 
 # ---------------------------------------------------------------- Optional Firewall Kill-Switch (when elevated)
-if (Test-IsAdmin) {
+if ($WarpScope -eq "tun" -and $EgressMode -in @("warp", "clean") -and (Test-IsAdmin)) {
     $fwOut = & $PyExe (Join-Path $ScriptsDest "ouc_firewall.py") install 2>&1
     if ($LASTEXITCODE -eq 0) {
         Ok "firewall kill-switch: $fwOut"
@@ -187,7 +219,7 @@ if (Test-IsAdmin) {
         Warn "firewall kill-switch skipped: $fwOut"
     }
 } else {
-    Warn "not elevated - skipping optional Windows Firewall rule (zen-proxy still fails closed via WARP IPv6 bind)"
+    Say "skipping optional TUN firewall rule (requires explicit TUN egress and elevation)"
 }
 
 # ---------------------------------------------------------------- Connect WARP in the selected mode (before starting keeper so they never race)
@@ -198,63 +230,73 @@ function Invoke-Warp([string[]]$WarpArgs) {
         $out = & $WarpBin --accept-tos @WarpArgs 2>&1
         if ($LASTEXITCODE -eq 0) { return $out }
         $out = & $WarpBin @WarpArgs 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            throw "warp-cli $($WarpArgs -join ' ') failed: $out"
+        }
         return $out
     } finally {
         $ErrorActionPreference = $prev
     }
 }
 
-if (-not $SkipWarmCheck) {
-    Say "checking Cloudflare WARP configuration..."
+Say "checking Cloudflare WARP configuration..."
 
-    # Keep a working registration. Creating a new one on every install
-    # invalidates the existing device and drops the tunnel.
+# Keep a working registration. Creating a new one on every install
+# invalidates the existing device and drops the tunnel.
+try {
     $regOut = (Invoke-Warp @("registration", "show") | Out-String)
-    if ($LASTEXITCODE -ne 0 -or $regOut -match "registration missing|not registered|no registration") {
-        Say "no WARP registration found - creating one..."
-        Invoke-Warp @("registration", "new") | Out-Null
-    }
+} catch {
+    $regOut = "registration missing"
+}
+if ($regOut -match "registration missing|not registered|no registration") {
+    Say "no WARP registration found - creating one..."
+    Invoke-Warp @("registration", "new") | Out-Null
+}
 
+$settingsRaw = (Invoke-Warp @("-j", "settings") | Out-String)
+$protocol = ""
+$opMode = ""
+try {
+    $settings = $settingsRaw | ConvertFrom-Json -ErrorAction Stop
+    $protocol = [string]$settings.settings.warp_tunnel_protocol
+    $opMode = [string]$settings.settings.operation_mode
+} catch {}
+
+# Preserve explicit dashboard choices; new installs use the isolated proxy.
+$DesiredOpMode = if ($WarpScope -eq "isolated" -or $EgressMode -in @("tor", "custom")) { "proxy" } else { "warp" }
+$DesiredProtocol = if ($DesiredOpMode -eq "proxy") { "masque" } else { "wireguard" }
+if ($protocol -ne $DesiredProtocol) {
+    Say "switching WARP tunnel protocol to $DesiredProtocol..."
+    Invoke-Warp @("tunnel", "protocol", "set", $DesiredProtocol) | Out-Null
+}
+if ($DesiredOpMode -eq "proxy") {
+    Invoke-Warp @("proxy", "port", "40000") | Out-Null
+}
+if ($opMode -ne $DesiredOpMode) {
+    Say "switching WARP operating mode to $DesiredOpMode..."
+    Invoke-Warp @("mode", $DesiredOpMode) | Out-Null
+}
+
+# Verify effective settings even with -SkipWarmCheck; never trust a successful setter alone.
+try {
     $settingsRaw = (Invoke-Warp @("-j", "settings") | Out-String)
-    $protocol = ""
-    $opMode = ""
-    try {
-        $settings = $settingsRaw | ConvertFrom-Json
-        $protocol = [string]$settings.settings.warp_tunnel_protocol
-        $opMode = [string]$settings.settings.operation_mode
-    } catch {}
+    $settings = $settingsRaw | ConvertFrom-Json -ErrorAction Stop
+    if ($settings.settings.warp_tunnel_protocol -isnot [string] -or
+        $settings.settings.operation_mode -isnot [string] -or
+        $settings.settings.warp_tunnel_protocol -ne $DesiredProtocol -or
+        $settings.settings.operation_mode -ne $DesiredOpMode) {
+        throw "WARP did not confirm protocol $DesiredProtocol and mode $DesiredOpMode."
+    }
+} catch {
+    Die "WARP configuration could not be verified; refusing to connect or start workers: $_"
+}
 
-    if ($protocol -and $protocol -ne "wireguard") {
-        Say "switching WARP tunnel protocol to WireGuard..."
-        Invoke-Warp @("tunnel", "protocol", "set", "wireguard") | Out-Null
-    }
-
-    # Keep the scope and egress mode the user selected in the dashboard.
-    # A reinstall must not silently switch an App-Only setup to full TUN.
-    $EgressCfg = Join-Path $env:LOCALAPPDATA "opencode-unlimited\lane\egress_mode.json"
-    $WarpScope = "tun"
-    $EgressMode = "warp"
-    if (Test-Path $EgressCfg) {
-        try {
-            $ec = Get-Content -LiteralPath $EgressCfg -Raw | ConvertFrom-Json
-            if ($ec.warp_scope) { $WarpScope = [string]$ec.warp_scope }
-            if ($ec.mode) { $EgressMode = [string]$ec.mode }
-        } catch {}
-    }
-    $DesiredOpMode = if ($WarpScope -eq "isolated" -or $EgressMode -in @("tor", "custom")) { "proxy" } else { "warp" }
-    if ($DesiredOpMode -eq "proxy") {
-        Invoke-Warp @("proxy", "port", "40000") | Out-Null
-    }
-    if ($opMode -and $opMode -ne $DesiredOpMode) {
-        Say "switching WARP operating mode to $DesiredOpMode..."
-        Invoke-Warp @("mode", $DesiredOpMode) | Out-Null
-    }
-
-    $st = (Invoke-Warp @("status") | Select-Object -First 1 | Out-String)
-    if ($st -match "Connected" -and $st -notmatch "Disconnected") {
-        Ok "warp tunnel: already connected"
-    } else {
-        Invoke-Warp @("connect") | Out-Null
+$st = (Invoke-Warp @("status") | Select-Object -First 1 | Out-String)
+if ($st -match "Connected" -and $st -notmatch "Disconnected") {
+    Ok "warp tunnel: already connected"
+} else {
+    Invoke-Warp @("connect") | Out-Null
+    if (-not $SkipWarmCheck) {
         $Connected = $false
         for ($i = 0; $i -lt 10; $i++) {
             Start-Sleep -Seconds 2
