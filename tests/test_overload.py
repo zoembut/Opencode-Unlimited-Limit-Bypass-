@@ -14,6 +14,24 @@ import zen_guard
 
 
 class ProviderOverloadTests(unittest.TestCase):
+    def test_provider_overload_does_not_trigger_automatic_hop(self):
+        api = avatar_ui.AvatarControlApi.__new__(avatar_ui.AvatarControlApi)
+        api._repair_lock = threading.Lock()
+        api._action_lock = threading.Lock()
+        api._repair_actions = []
+        api._repair_last = {}
+        api.get_state = lambda: {
+            "services": {"keeper_running": True, "keeper_heartbeat": 1, "proxy_listening": True},
+            "warp": {"connected": True, "rotating": False},
+            "proxy": {"fallback_active": False},
+            "probe": {"ok": True, "code": "overloaded"},
+            "egress": {"mode": "warp"},
+            "lane": {"desktop_service_wired": True, "path_wired": True},
+        }
+        with mock.patch.object(api, "_run_repair_action") as repair:
+            api._auto_repair_tick()
+        repair.assert_not_called()
+
     def test_overload_and_real_quota_in_same_chunk_only_queue_quota_session(self):
         with tempfile.TemporaryDirectory() as directory:
             log = Path(directory) / "opencode.log"
