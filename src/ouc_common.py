@@ -411,6 +411,9 @@ def ensure_warp_protocol(desired: str = "wireguard", warp_bin: str | None = None
     want = desired.strip().lower()
     if want not in ("wireguard", "masque"):
         return False
+    # Current WARP clients require MASQUE for local proxy mode.
+    if _current_warp_scope() == "isolated":
+        want = "masque"
     current = get_warp_protocol(warp_bin=warp_bin)
     if current == want:
         return True
@@ -939,11 +942,19 @@ def _current_warp_scope() -> str:
 def ensure_warp_mode(warp_bin: str, scope: str) -> None:
     """Put warp-cli into the operation mode required by the selected scope."""
     desired = "proxy" if scope == "isolated" else "warp"
+    if desired == "proxy" and not ensure_warp_protocol("masque", warp_bin=warp_bin):
+        run_warp(["disconnect"], warp_bin=warp_bin, timeout=10.0)
+        raise RuntimeError("WARP local proxy requires MASQUE; refusing full-system fallback")
     if warp_mode(warp_bin=warp_bin) == desired:
         return
     if desired == "proxy":
         run_warp(["proxy", "port", "40000"], warp_bin=warp_bin, timeout=10.0)
     run_warp(["mode", desired], warp_bin=warp_bin, timeout=10.0)
+    with _WARP_STATUS_LOCK:
+        _WARP_MODE_CACHE.clear()
+    if desired == "proxy" and warp_mode(warp_bin=warp_bin) != "proxy":
+        run_warp(["disconnect"], warp_bin=warp_bin, timeout=10.0)
+        raise RuntimeError("WARP did not keep proxy mode; disconnected for safety")
 
 
 def warp_registration_healthy(warp_bin: str) -> bool:

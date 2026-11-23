@@ -46,7 +46,7 @@ def _relay_ssl_context() -> ssl.SSLContext:
 
 
 def get_default_warp_scope() -> str:
-    return "tun" if sys.platform == "win32" else "isolated"
+    return "isolated"
 
 
 def get_egress_config() -> dict:
@@ -55,7 +55,7 @@ def get_egress_config() -> dict:
     if EGRESS_CONFIG_FILE.is_file():
         try:
             cfg = json.loads(EGRESS_CONFIG_FILE.read_text(encoding="utf-8"))
-            if "warp_scope" not in cfg:
+            if cfg.get("warp_scope") not in ("isolated", "tun"):
                 cfg["warp_scope"] = default_scope
             return cfg
         except Exception:

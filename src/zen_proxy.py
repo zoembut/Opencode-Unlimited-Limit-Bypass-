@@ -708,8 +708,9 @@ def _open_warp_direct(
         try:
             from tor_manager import open_socks5_tunnel
             return open_socks5_tunnel(clean_host, port, socks_host="127.0.0.1", socks_port=40000, timeout=2.0)
-        except Exception:
-            pass
+        except Exception as exc:
+            if is_strict:
+                raise ConnectionRefusedError("WARP local proxy unavailable; refusing other routes") from exc
 
     # 2. TUN mode or fallback: bind explicitly to the WARP adapter's IPv6
     if is_opencode_host:

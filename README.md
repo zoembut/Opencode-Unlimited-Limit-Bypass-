@@ -2,6 +2,42 @@
 # NEW VERSION-4.0 (Fixed: shared-WARP exhaustion, Tor 403 walls, silent proxy fallback, per-user capacity caps. Adds: two-lane block relay, WarpGate pool, redesigned dashboard)
 # Opencode-Unlimited-Limit-Bypass
 
+## Fork Credits and Windows Safety Update
+
+This is a fork maintained by [zoembut](https://github.com/zoembut), based on
+[Opencode-Unlimited-Limit-Bypass- by Avatar (ShadowySphinX)](https://github.com/ShadowySphinX/Opencode-Unlimited-Limit-Bypass-).
+The original author, project branding, and MIT license are retained. The changes
+below are fork-specific maintenance, not a claim of original authorship.
+
+- App-only WARP routing uses MASQUE, as required by current Cloudflare clients.
+  See Cloudflare's [Local proxy mode requirements](https://developers.cloudflare.com/cloudflare-one/team-and-resources/devices/cloudflare-one-client/configure/modes/#local-proxy-mode).
+- The proxy mode helper checks the effective mode and disconnects rather than
+  accepting a silent full-system tunnel fallback.
+- Strict isolated routing stops if the local SOCKS proxy fails instead of trying
+  a native adapter route. Keep App Only / Isolated selected on remote-access PCs.
+- The dashboard labels explicit inference overload separately from transport
+  errors and does not offer network repair for that capacity warning. Generic
+  proxy 503 responses still count as connectivity failures.
+- These changes configure Cloudflare WARP only. Do not stop or reconfigure a
+  separate WireGuard tunnel used for RDP or server access.
+
+Use the updated Python source or the installer from this fork. The inherited
+`OpencodeUnlimited-Multi.exe` is an upstream binary and does **not** contain these
+fixes. Do not run it alongside the patched workers. A source dashboard launch is:
+
+```powershell
+python -m pip install -r requirements.txt
+python src/avatar_ui.py
+```
+
+An OpenCode message such as **"The inference service is overloaded. Please try
+again later"** indicates provider capacity, not proof of an IP quota or a broken
+tunnel. Allow OpenCode's retry to finish, wait, or choose another available
+model/provider. This fork cannot add capacity to a remote inference service and
+does not claim to remove that error.
+
+---
+
 [![Version](https://img.shields.io/badge/Version-v4.0-22c55e?style=for-the-badge&logo=semver)](https://github.com/ShadowySphinX/Opencode-Unlimited-Limit-Bypass-)
 [![Author](https://img.shields.io/badge/Author-Avatar%20%28ShadowySphinX%29-22d3ee?style=for-the-badge&logo=github)](https://github.com/ShadowySphinX)
 [![Repository](https://img.shields.io/badge/GitHub-Opencode--Unlimited-blue?style=for-the-badge&logo=github)](https://github.com/ShadowySphinX/Opencode-Unlimited-Limit-Bypass-)
@@ -172,11 +208,11 @@ Install these components before setup:
 
 ## Quick Start (Windows)
 
-> You do **not** need Python installed. Everything is bundled into a single standalone program.
+> For this fork's fixes, use Python 3.10+ and the updated source. The inherited standalone EXE is an upstream build without these changes.
 
 1. **Download & Run:**
-   * Download **`OpencodeUnlimited-Multi.exe`** from the repository root, or clone the source and build it.
-   * Double-click to launch the dashboard.
+   * Clone this fork, then run `python -m pip install -r requirements.txt`.
+   * Run `python src/avatar_ui.py` to launch the dashboard, or use the source installer.
 2. **Verify Protection Controls (Left Panel):**
    * Ensure these switches are **ON** (they are on by default):
      * **WARP Keeper:** ON
@@ -196,11 +232,11 @@ Select the method that best matches your network environment:
 ### Method 1: Cloudflare WARP (Default)
 * **Best for:** General use with IPv6 `/64` rotation.
 * **Recommended Settings:**
-  * **Scope (Windows):** `Full System TUN` (keeps the WARP adapter active; recommended if App-Only mode shows no adapter).
+  * **Scope (Windows):** `App Only (Isolated)` on port `40000`, especially when remote access depends on another VPN.
   * **Scope (Linux / VPS):** `App Only (Isolated)` on port `40000` (leaves the system's normal routing and SSH access in place).
-  * **Protocol:** `WireGuard` (MASQUE uses UDP 443, which some ISPs throttle or block).
+  * **Protocol:** `MASQUE` for app-only mode. Current WARP clients do not support WireGuard with local proxy mode. If MASQUE is blocked, do not silently switch a remote-access PC to full-system mode.
   * **Switches:** Turn ON **WARP Keeper**, **Zen Guard**, **Auto-Resume**, and **Auto-Repair**.
-  * **Strict mode:** Leave it OFF for normal use. It is only for users who prefer a failed request over a direct fallback.
+  * **Strict mode:** Turn it ON to prevent fallback outside the selected local WARP proxy.
 
 ### Method 2: Clean WireGuard Endpoints (Best for ISP Throttling / Restricted Countries)
 * **Best for:** Users in Russia, Iran, China, or university/corporate networks where Cloudflare's default Anycast IPs are throttled or blocked (`CF_HAPPY_EYEBALLS_MITM_FAILURE`).
